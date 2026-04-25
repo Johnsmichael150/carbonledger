@@ -158,6 +158,9 @@ impl CarbonRegistryContract {
     /// # Errors
     /// - [`CarbonError::UnauthorizedVerifier`] if caller is not a registered verifier.
     /// - [`CarbonError::ProjectNotFound`] if `project_id` does not exist.
+    // AUDIT-NOTE [MEDIUM]: No self-approval guard. A verifier who is also listed as
+    // `verifier_address` on a project they submitted can approve their own project.
+    // Fix: check `project.verifier_address != verifier_address` before approving.
     pub fn verify_project(
         env: Env,
         verifier_address: Address,
@@ -272,6 +275,12 @@ impl CarbonRegistryContract {
     }
 
     /// Increment the issued credit counter for a project (called by carbon_credit contract).
+    // AUDIT-NOTE [HIGH]: This function is gated by the oracle address, not the
+    // carbon_credit contract address. In practice it should only be callable by
+    // carbon_credit during mint_credits. If the oracle key is compromised, an attacker
+    // can inflate total_credits_issued without actually minting any credits, corrupting
+    // the project's accounting. Fix: gate on the carbon_credit contract address instead,
+    // or add a separate CreditContract role.
     pub fn increment_issued(
         env: Env,
         oracle_address: Address,
