@@ -7,6 +7,20 @@ on:
     branches: [main]
 
 jobs:
+  lint-dockerfiles:
+    name: Lint Dockerfiles – no floating tags
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if any FROM uses a floating tag (no digest)
+        run: |
+          # Match FROM lines that have a tag but no @sha256: digest
+          if grep -rE '^FROM [^#]+:[^@]+$' frontend/Dockerfile backend/Dockerfile oracle/Dockerfile; then
+            echo "ERROR: Floating base image tags detected. All FROM statements must pin a digest (@sha256:...)."
+            exit 1
+          fi
+          echo "All FROM statements are digest-pinned."
+
   contracts:
     name: Soroban Contract Tests
     runs-on: ubuntu-latest
