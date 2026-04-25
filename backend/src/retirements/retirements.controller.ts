@@ -14,8 +14,11 @@ export class RetirementsController {
   constructor(private readonly retirementsService: RetirementsService) {}
 
   @Get()
-  findAll(@Query("limit") limit?: string) {
-    return this.retirementsService.findAll(limit ? Number(limit) : 20);
+  findAll(
+    @Query("cursor") cursor?: string,
+    @Query("limit")  limit?: string,
+  ) {
+    return this.retirementsService.findAll(cursor, limit ? Number(limit) : 20);
   }
 
   @Get(":id")
