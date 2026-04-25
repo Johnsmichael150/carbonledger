@@ -4,6 +4,7 @@ import { MintCreditsDto, RetireCreditsDto } from "./credits.dto";
 import { MailService } from "../mail/mail.service";
 import { MailEvent } from "../mail/mail.constants";
 import { randomBytes } from "crypto";
+import { IpfsService } from "../common/ipfs.service";
 
 @Injectable()
 export class CreditsService {
@@ -60,7 +61,23 @@ export class CreditsService {
     const serialStart  = Number(batch.serialStart);
     const serialNumbers = Array.from({ length: dto.amount }, (_, i) => String(serialStart + i));
 
-    // Create retirement record
+    // Generate certificate data and compute IPFS CID for content integrity verification
+    const certificateData = {
+      retirementId,
+      batchId: dto.batchId,
+      projectId: batch.projectId,
+      amount: dto.amount,
+      retiredBy: dto.holderPublicKey,
+      beneficiary: dto.beneficiary,
+      retirementReason: dto.retirementReason,
+      vintageYear: batch.vintageYear,
+      serialNumbers,
+      timestamp: Date.now(),
+    };
+    const certificateJson = JSON.stringify(certificateData);
+    const certificateCid = this.ipfsService.generateCid(certificateJson);
+
+    // Create retirement record with CID for integrity verification
     const retirement = await this.prisma.retirementRecord.create({
       data: {
         retirementId,
@@ -73,6 +90,8 @@ export class CreditsService {
         vintageYear:      batch.vintageYear,
         serialNumbers,
         txHash:           randomBytes(32).toString("hex"), // In production: actual Stellar tx hash
+        certificateCid:   certificateCid, // Store CID for on-chain and off-chain verification
+        isValid:          true,
       },
     });
 
