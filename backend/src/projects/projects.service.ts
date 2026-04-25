@@ -104,6 +104,7 @@ export class ProjectsService {
           metadataCid: true,
           verifierAddress: true,
           ownerAddress: true,
+          methodologyScore: true,
           coordinates: true,
           lastMonitoringAt: true,
           createdAt: true,
