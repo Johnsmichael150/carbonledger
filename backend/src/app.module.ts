@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Module, Controller, Get } from "@nestjs/common";
 import { BullModule } from "@nestjs/bullmq";
 import { AuthModule } from "./auth/auth.module";
 import { ProjectsModule } from "./projects/projects.module";
@@ -8,6 +8,7 @@ import { MarketplaceModule } from "./marketplace/marketplace.module";
 import { OracleModule } from "./oracle/oracle.module";
 import { StatsModule } from "./stats/stats.module";
 import { QueueModule } from "./queue/queue.module";
+import { IndexerModule } from "./indexer/indexer.module";
 import { PrismaService } from "./prisma.service";
 
 @Controller("health")
@@ -39,6 +40,7 @@ class HealthController {
     OracleModule,
     StatsModule,
     QueueModule,
+    IndexerModule,
   ],
   controllers: [HealthController],
   providers: [PrismaService],
