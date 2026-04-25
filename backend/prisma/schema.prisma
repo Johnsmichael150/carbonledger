@@ -145,3 +145,18 @@ model Job {
   @@index([queue, status])
   @@index([type])
 }
+
+model PriceApproval {
+  id              String   @id @default(cuid())
+  methodology     String
+  vintageYear     Int
+  priceStroops    String   // Price in stroops (USDC has 7 decimals)
+  deviation       Float
+  status          String   @default("Pending") // Pending | Approved | Rejected
+  reason          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([methodology, vintageYear])
+}

@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma.service";
-import { IsString, IsInt, IsPositive } from "class-validator";
+import { IsString, IsInt, IsPositive, IsNumber } from "class-validator";
 import { Type } from "class-transformer";
 
 export class SubmitMonitoringDto {
@@ -21,6 +21,13 @@ export class UpdatePriceDto {
 export class FlagProjectDto {
   @IsString() projectId: string;
   @IsString() reason: string;
+}
+
+export class HoldPriceUpdateDto {
+  @IsString() methodology: string;
+  @IsInt() @Type(() => Number) vintageYear: number;
+  @IsString() priceStroops: string;
+  @IsNumber() @Type(() => Number) deviation: number;
 }
 
 @Injectable()
@@ -67,5 +74,37 @@ export class OracleService {
       data:  { status: "Suspended" },
     });
     return { flagged: true, projectId: dto.projectId, reason: dto.reason };
+  }
+
+  async holdPriceUpdate(dto: HoldPriceUpdateDto) {
+    return this.prisma.priceApproval.create({
+      data: {
+        methodology:  dto.methodology,
+        vintageYear:  dto.vintageYear,
+        priceStroops: dto.priceStroops,
+        deviation:    dto.deviation,
+        status:       "Pending",
+      },
+    });
+  }
+
+  async getPriceApprovals() {
+    return this.prisma.priceApproval.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  async approvePriceUpdate(id: string) {
+    return this.prisma.priceApproval.update({
+      where: { id },
+      data:  { status: "Approved" },
+    });
+  }
+
+  async rejectPriceUpdate(id: string, reason?: string) {
+    return this.prisma.priceApproval.update({
+      where: { id },
+      data:  { status: "Rejected", reason },
+    });
   }
 }
