@@ -61,6 +61,33 @@ pub enum DataKey {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/// Emitted when carbon credits are minted.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct CreditMintedEvent {
+    pub batch_id: String,
+    pub project_id: String,
+    pub admin: Address,
+    pub amount: i128,
+    pub vintage_year: u32,
+    pub serial_start: u64,
+    pub serial_end: u64,
+    pub timestamp: u64,
+}
+
+/// Emitted when carbon credits are permanently retired.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct CreditRetiredEvent {
+    pub retirement_id: String,
+    pub batch_id: String,
+    pub project_id: String,
+    pub amount: i128,
+    pub retired_by: Address,
+    pub beneficiary: String,
+    pub timestamp: u64,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CreditStatus {
@@ -229,7 +256,16 @@ impl CarbonCreditContract {
 
         env.events().publish(
             (symbol_short!("c_ledger"), symbol_short!("minted")),
-            (batch_id, project_id, amount, vintage_year, serial_start, serial_end),
+            CreditMintedEvent {
+                batch_id: batch_id.clone(),
+                project_id: project_id.clone(),
+                admin: admin.clone(),
+                amount,
+                vintage_year,
+                serial_start,
+                serial_end,
+                timestamp: env.ledger().timestamp(),
+            },
         );
         Ok(())
     }
@@ -329,7 +365,15 @@ impl CarbonCreditContract {
 
         env.events().publish(
             (symbol_short!("c_ledger"), symbol_short!("retired")),
-            (retirement_id, batch_id, batch.project_id, amount, holder, beneficiary),
+            CreditRetiredEvent {
+                retirement_id: retirement_id.clone(),
+                batch_id: batch_id.clone(),
+                project_id: batch.project_id.clone(),
+                amount,
+                retired_by: holder.clone(),
+                beneficiary: beneficiary.clone(),
+                timestamp: env.ledger().timestamp(),
+            },
         );
         Ok(cert)
     }

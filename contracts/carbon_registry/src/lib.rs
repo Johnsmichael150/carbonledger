@@ -47,6 +47,18 @@ pub enum DataKey {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/// Emitted when a new carbon project is registered.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ProjectRegisteredEvent {
+    pub project_id: String,
+    pub admin: Address,
+    pub methodology: String,
+    pub country: String,
+    pub vintage_year: u32,
+    pub timestamp: u64,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProjectStatus {
@@ -148,7 +160,14 @@ impl CarbonRegistryContract {
 
         env.events().publish(
             (symbol_short!("c_ledger"), symbol_short!("reg_proj")),
-            (project_id, methodology, country, vintage_year),
+            ProjectRegisteredEvent {
+                project_id: project_id.clone(),
+                admin: admin.clone(),
+                methodology: methodology.clone(),
+                country: country.clone(),
+                vintage_year,
+                timestamp: env.ledger().timestamp(),
+            },
         );
         Ok(())
     }

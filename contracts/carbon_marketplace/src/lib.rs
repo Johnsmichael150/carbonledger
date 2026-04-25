@@ -53,6 +53,30 @@ pub enum DataKey {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/// Emitted when a new market listing is created.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ListingCreatedEvent {
+    pub listing_id: String,
+    pub seller: Address,
+    pub batch_id: String,
+    pub amount: i128,
+    pub price_per_credit: i128,
+    pub timestamp: u64,
+}
+
+/// Emitted when credits are purchased.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PurchaseCompletedEvent {
+    pub listing_id: String,
+    pub buyer: Address,
+    pub seller: Address,
+    pub amount: i128,
+    pub total_cost: i128,
+    pub timestamp: u64,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ListingStatus {
@@ -180,7 +204,14 @@ impl CarbonMarketplaceContract {
 
         env.events().publish(
             (symbol_short!("c_ledger"), symbol_short!("listed")),
-            (listing_id, seller, batch_id, amount, price_per_credit_usdc),
+            ListingCreatedEvent {
+                listing_id: listing_id.clone(),
+                seller: seller.clone(),
+                batch_id: batch_id.clone(),
+                amount,
+                price_per_credit: price_per_credit_usdc,
+                timestamp: env.ledger().timestamp(),
+            },
         );
         Ok(())
     }
@@ -274,7 +305,14 @@ impl CarbonMarketplaceContract {
 
         env.events().publish(
             (symbol_short!("c_ledger"), symbol_short!("purchase")),
-            (listing_id, buyer, listing.seller, amount, total_cost),
+            PurchaseCompletedEvent {
+                listing_id: listing_id.clone(),
+                buyer: buyer.clone(),
+                seller: listing.seller.clone(),
+                amount,
+                total_cost,
+                timestamp: env.ledger().timestamp(),
+            },
         );
         Ok(())
     }
@@ -344,7 +382,14 @@ impl CarbonMarketplaceContract {
 
             env.events().publish(
                 (symbol_short!("c_ledger"), symbol_short!("bulk_buy")),
-                (listing_id, buyer.clone(), amount, total_cost),
+                PurchaseCompletedEvent {
+                    listing_id: listing_id.clone(),
+                    buyer: buyer.clone(),
+                    seller: listing.seller.clone(),
+                    amount,
+                    total_cost,
+                    timestamp: env.ledger().timestamp(),
+                },
             );
         }
         Ok(())
