@@ -567,4 +567,39 @@ mod tests {
         let l = client.get_listing(&s(&env, "list-001")).unwrap();
         assert_eq!(l.status, ListingStatus::Active);
     }
+
+    #[test]
+    fn test_delist_from_non_owner_fails() {
+        let env = Env::default();
+        let (client, _, seller, _) = setup(&env);
+        let non_owner = Address::generate(&env);
+        
+        // Create listing as seller
+        add_listing(&env, &client, &seller);
+        
+        // Attempt to delist from non-owner address should fail
+        let result = client.try_delist_credits(&non_owner, &s(&env, "list-001"));
+        assert!(result.is_err());
+        
+        // Verify listing is still active
+        let listing = client.get_listing(&s(&env, "list-001")).unwrap();
+        assert_eq!(listing.status, ListingStatus::Active);
+    }
+
+    #[test]
+    fn test_delist_from_owner_succeeds() {
+        let env = Env::default();
+        let (client, _, seller, _) = setup(&env);
+        
+        // Create listing as seller
+        add_listing(&env, &client, &seller);
+        
+        // Delist from owner address should succeed
+        let result = client.delist_credits(&seller, &s(&env, "list-001"));
+        assert!(result.is_ok());
+        
+        // Verify listing is delisted
+        let listing = client.get_listing(&s(&env, "list-001")).unwrap();
+        assert_eq!(listing.status, ListingStatus::Delisted);
+    }
 }
