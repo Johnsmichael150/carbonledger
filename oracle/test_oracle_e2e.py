@@ -85,6 +85,62 @@ def require_env(var_name: str) -> str:
     return value
 
 
+def validate_contract_id(contract_id: str) -> bool:
+    """Validate contract ID format (must start with 'C' and be 56 chars)."""
+    if not contract_id or not contract_id.startswith('C') or len(contract_id) != 56:
+        return False
+    return True
+
+
+def check_account_funded(server: SorobanServer, keypair: Keypair) -> Tuple[bool, str]:
+    """
+    Check if account exists on Testnet and has sufficient XLM balance.
+    
+    Returns:
+        (is_funded: bool, message: str)
+    """
+    try:
+        account = server.load_account(keypair.public_key)
+        balance_stroops = sum(
+            int(bal.balance) * 10_000_000 
+            for bal in account.balances if bal.asset_type == 'native'
+        )
+        balance_xlm = balance_stroops / 10_000_000
+        
+        if balance_xlm < 1.0:
+            return False, f"Balance too low: {balance_xlm:.2f} XLM (need ≥1.0 XLM)"
+        
+        return True, f"Balance OK: {balance_xlm:.2f} XLM"
+    except Exception as e:
+        if "not found" in str(e).lower():
+            return False, f"Account not found on Testnet. Fund with: curl 'https://friendbot.stellar.org?addr={keypair.public_key}'"
+        return False, f"Failed to load account: {e}"
+
+
+def verify_contracts_deployed(server: SorobanServer, contract_ids: dict) -> Tuple[bool, list]:
+    """
+    Verify that contracts are deployed and callable.
+    
+    Args:
+        contract_ids: Dict with keys 'oracle' and 'registry', values are contract IDs
+    
+    Returns:
+        (all_ok: bool, messages: list)
+    """
+    messages = []
+    all_ok = True
+    
+    for name, contract_id in contract_ids.items():
+        try:
+            contract = Contract(contract_id)
+            messages.append(f"✓ {name} contract: {contract_id} (format valid)")
+        except Exception as e:
+            messages.append(f"✗ {name} contract: Invalid contract ID or not deployed - {e}")
+            all_ok = False
+    
+    return all_ok, messages
+
+
 def build_and_submit(
     server: SorobanServer,
     keypair: Keypair,
@@ -232,6 +288,64 @@ class E2ETestContext:
         log.info(f"Oracle account: {self.oracle_keypair.public_key}")
         log.info(f"Oracle contract: {self.oracle_contract_id}")
         log.info(f"Registry contract: {self.registry_contract_id}")
+        
+        self._validate_setup()
+    
+    def _validate_setup(self):
+        """Run pre-flight validation checks."""
+        log.info("\n" + "=" * 80)
+        log.info("PRE-FLIGHT VALIDATION")
+        log.info("=" * 80)
+        
+        log.info("\n1. Validating contract ID formats...")
+        if not validate_contract_id(self.oracle_contract_id):
+            raise RuntimeError(
+                f"Invalid ORACLE_CONTRACT_ID format: {self.oracle_contract_id}\n"
+                f"Must start with 'C' and be 56 characters long."
+            )
+        if not validate_contract_id(self.registry_contract_id):
+            raise RuntimeError(
+                f"Invalid REGISTRY_CONTRACT_ID format: {self.registry_contract_id}\n"
+                f"Must start with 'C' and be 56 characters long."
+            )
+        log.info("   ✓ Contract ID formats valid")
+        
+        log.info("\n2. Verifying contracts...")
+        contracts_ok, contract_msgs = verify_contracts_deployed(
+            self.server,
+            {"oracle": self.oracle_contract_id, "registry": self.registry_contract_id}
+        )
+        for msg in contract_msgs:
+            log.info(f"   {msg}")
+        
+        log.info("\n3. Checking account balances...")
+        accounts = {
+            "Oracle": self.oracle_keypair,
+            "Admin": self.admin_keypair,
+            "Verifier": self.verifier_keypair,
+        }
+        for role, keypair in accounts.items():
+            is_funded, msg = check_account_funded(self.server, keypair)
+            status = "✓" if is_funded else "✗"
+            log.info(f"   {status} {role}: {msg}")
+            if not is_funded:
+                raise RuntimeError(
+                    f"{role} account not funded:\n{msg}"
+                )
+        
+        log.info("\n4. Checking network connectivity...")
+        try:
+            latest_ledger = self.server.get_latest_ledger()
+            log.info(f"   ✓ Connected to Testnet (ledger: {latest_ledger.sequence})")
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to connect to Stellar Testnet: {e}\n"
+                f"RPC URL: {STELLAR_RPC_URL}"
+            )
+        
+        log.info("\n" + "=" * 80)
+        log.info("✓ All pre-flight checks passed!")
+        log.info("=" * 80 + "\n")
 
 
 # ── Test Scenarios ───────────────────────────────────────────────────────────
@@ -631,8 +745,15 @@ if __name__ == "__main__":
         passed, failed = run_e2e_tests()
         exit(0 if failed == 0 else 1)
     except KeyboardInterrupt:
-        log.info("Interrupted by user")
+        log.info("\nInterrupted by user")
+        exit(1)
+    except RuntimeError as e:
+        log.error(f"\n✗ Setup failed: {e}")
+        log.error("\nSee E2E_SETUP_GUIDE.md for detailed setup instructions.")
         exit(1)
     except Exception as e:
-        log.error(f"Fatal error: {e}", exc_info=True)
+        log.error(f"\n✗ Fatal error: {e}", exc_info=True)
+        log.error("\nIf this is a network issue, verify:")
+        log.error(f"  - RPC URL: {STELLAR_RPC_URL}")
+        log.error(f"  - Network: {NETWORK_PASSPHRASE}")
         exit(1)

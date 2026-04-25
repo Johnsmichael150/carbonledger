@@ -165,6 +165,43 @@ cp .env.example .env
 # Edit .env with Testnet contract IDs and keypair secrets
 ```
 
+### Pre-Flight Validation
+
+When you run the tests, they automatically perform pre-flight validation checks:
+
+```
+PRE-FLIGHT VALIDATION
+================================================================================
+
+1. Validating contract ID formats...
+   ✓ Contract ID formats valid
+
+2. Verifying contracts...
+   ✓ oracle contract: CXXXXXXXXX... (format valid)
+   ✓ registry contract: CXXXXXXXXX... (format valid)
+
+3. Checking account balances...
+   ✓ Oracle: Balance OK: 1000.50 XLM
+   ✓ Admin: Balance OK: 500.25 XLM
+   ✓ Verifier: Balance OK: 250.75 XLM
+
+4. Checking network connectivity...
+   ✓ Connected to Testnet (ledger: 12345678)
+
+================================================================================
+✓ All pre-flight checks passed!
+================================================================================
+```
+
+These checks validate:
+
+- ✅ Contract IDs have correct format (start with 'C', 56 chars)
+- ✅ All accounts are created on Testnet
+- ✅ All accounts have sufficient XLM balance (≥1.0 XLM)
+- ✅ Network connectivity to Stellar Testnet RPC
+
+If any check fails, the test provides clear guidance on how to fix it.
+
 ### Run Tests
 
 ```bash
@@ -250,6 +287,61 @@ Total: 8 passed, 0 failed
 - Project suspension/flagging by oracle
 
 ## Troubleshooting
+
+### Pre-Flight Validation Errors
+
+#### Error: "Invalid Contract ID Format"
+
+```
+RuntimeError: Invalid ORACLE_CONTRACT_ID format: GXXXXXX
+Must start with 'C' and be 56 characters long.
+```
+
+**Cause:** Contract ID is wrong format or from wrong network  
+**Solution:**
+
+1. Deploy contracts to Stellar **Testnet** (not Mainnet)
+2. Verify contract ID starts with 'C' (not 'G')
+3. Update `.env` with correct contract ID from deployment
+
+#### Error: "Account Not Found on Testnet"
+
+```
+RuntimeError: Oracle account not found on Testnet.
+Fund with: curl 'https://friendbot.stellar.org?addr=GXXXXXX'
+```
+
+**Cause:** Account doesn't exist on Testnet  
+**Solution:**
+
+```bash
+curl "https://friendbot.stellar.org?addr=GXXXXXX"  # Fund account
+sleep 10  # Wait for funding
+```
+
+#### Error: "Balance Too Low"
+
+```
+RuntimeError: Oracle account not funded:
+Balance too low: 0.50 XLM (need ≥1.0 XLM)
+```
+
+**Cause:** Account has insufficient XLM  
+**Solution:** Fund again with friendbot (gives 10,000 XLM per account)
+
+#### Error: "Failed to Connect to Stellar Testnet"
+
+```
+RuntimeError: Failed to connect to Stellar Testnet: Connection refused
+RPC URL: https://soroban-testnet.stellar.org
+```
+
+**Cause:** Network connectivity issue  
+**Solution:**
+
+- Check: `ping soroban-testnet.stellar.org`
+- Verify status: https://status.stellar.org
+- Retry after a few minutes
 
 ### Test Fails: "Missing required env var"
 
