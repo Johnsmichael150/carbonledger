@@ -42,6 +42,7 @@ pub enum DataKey {
     AllListings,
     Admin,
     UsdcToken,
+    SuspendedProject(String),
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -88,10 +89,27 @@ impl CarbonMarketplaceContract {
         env.storage().persistent().set(&DataKey::AllListings, &listings);
     }
 
+    /// Mark a project as suspended in the marketplace. Only admin may call this.
+    /// Suspended projects cannot have new listings created or credits purchased.
+    pub fn suspend_project(env: Env, admin: Address, project_id: String) -> Result<(), CarbonError> {
+        admin.require_auth();
+        let stored_admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
+        if stored_admin != admin {
+            return Err(CarbonError::UnauthorizedVerifier);
+        }
+        env.storage().persistent().set(&DataKey::SuspendedProject(project_id.clone()), &true);
+        env.events().publish(
+            (symbol_short!("c_ledger"), symbol_short!("mkt_susp")),
+            project_id,
+        );
+        Ok(())
+    }
+
     /// List carbon credits for sale at a fixed USDC price per credit (in stroops).
     ///
     /// # Errors
     /// - [`CarbonError::ZeroAmountNotAllowed`] if `amount` or `price_per_credit_usdc` is zero.
+    /// - [`CarbonError::ProjectSuspended`] if the project is suspended.
     pub fn list_credits(
         env: Env,
         seller: Address,
@@ -109,6 +127,10 @@ impl CarbonMarketplaceContract {
 
         if amount <= 0 || price_per_credit_usdc <= 0 {
             return Err(CarbonError::ZeroAmountNotAllowed);
+        }
+
+        if env.storage().persistent().get::<DataKey, bool>(&DataKey::SuspendedProject(project_id.clone())).unwrap_or(false) {
+            return Err(CarbonError::ProjectSuspended);
         }
 
         // ── effects ───────────────────────────────────────────────────────────
@@ -195,6 +217,9 @@ impl CarbonMarketplaceContract {
         if listing.status == ListingStatus::Delisted || listing.status == ListingStatus::Sold {
             return Err(CarbonError::ListingNotFound);
         }
+        if env.storage().persistent().get::<DataKey, bool>(&DataKey::SuspendedProject(listing.project_id.clone())).unwrap_or(false) {
+            return Err(CarbonError::ProjectSuspended);
+        }
         if amount > listing.amount_available {
             return Err(CarbonError::InsufficientLiquidity);
         }
@@ -255,6 +280,9 @@ impl CarbonMarketplaceContract {
             let mut listing = Self::load_listing(&env, &listing_id)?;
             if listing.status == ListingStatus::Delisted || listing.status == ListingStatus::Sold {
                 return Err(CarbonError::ListingNotFound);
+            }
+            if env.storage().persistent().get::<DataKey, bool>(&DataKey::SuspendedProject(listing.project_id.clone())).unwrap_or(false) {
+                return Err(CarbonError::ProjectSuspended);
             }
             if amount > listing.amount_available {
                 return Err(CarbonError::InsufficientLiquidity);
@@ -449,5 +477,47 @@ mod tests {
             &s(&env, "Brazil"),
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_suspended_project_listing_blocked() {
+        let env = Env::default();
+        let (client, admin, seller, _) = setup(&env);
+        client.suspend_project(&admin, &s(&env, "proj-001")).unwrap();
+        let result = client.try_list_credits(
+            &seller,
+            &s(&env, "list-001"),
+            &s(&env, "batch-001"),
+            &s(&env, "proj-001"),
+            &100_i128,
+            &10_0000000_i128,
+            &2023_u32,
+            &s(&env, "VCS"),
+            &s(&env, "Brazil"),
+        );
+        assert_eq!(result.unwrap_err().unwrap(), CarbonError::ProjectSuspended);
+    }
+
+    #[test]
+    fn test_suspended_project_purchase_blocked() {
+        let env = Env::default();
+        let (client, admin, seller, _) = setup(&env);
+        // List before suspending
+        add_listing(&env, &client, &seller);
+        // Suspend the project
+        client.suspend_project(&admin, &s(&env, "proj-001")).unwrap();
+        let buyer = Address::generate(&env);
+        let result = client.try_purchase_credits(&buyer, &s(&env, "list-001"), &10_i128);
+        assert_eq!(result.unwrap_err().unwrap(), CarbonError::ProjectSuspended);
+    }
+
+    #[test]
+    fn test_non_suspended_project_listing_succeeds() {
+        let env = Env::default();
+        let (client, _, seller, _) = setup(&env);
+        // No suspension — listing should succeed
+        add_listing(&env, &client, &seller);
+        let l = client.get_listing(&s(&env, "list-001")).unwrap();
+        assert_eq!(l.status, ListingStatus::Active);
     }
 }
