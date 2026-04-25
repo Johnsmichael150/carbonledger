@@ -35,7 +35,24 @@ async function bootstrap() {
   });
 
   app.setGlobalPrefix('api/v1');
-  app.enableCors({ origin: process.env.FRONTEND_URL });
+
+  const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : [process.env.FRONTEND_URL || 'http://localhost:3000'];
+
+  app.enableCors({
+     origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new ForbiddenException('Origin not allowed by CORS'), false);
+        }
+      },
+     credentials: true,
+     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+     preflightContinue: false,
+     optionsSuccessStatus: 204,
+   });
 
   const httpAdapter = app.getHttpAdapter();
   httpAdapter.get('/health', (_req: any, res: any) => {
