@@ -75,14 +75,35 @@ pub struct CarbonOracleContract;
 impl CarbonOracleContract {
 
     /// Initialise oracle with admin and authorised oracle signer address.
+    /// Oracle address is stored in contract state — never hardcoded.
     pub fn initialize(env: Env, admin: Address, oracle_address: Address) {
         admin.require_auth();
         env.storage().persistent().set(&DataKey::Admin, &admin);
         env.storage().persistent().set(&DataKey::OracleAddress, &oracle_address);
     }
 
+    /// Rotate the registered oracle address. Admin-only.
+    ///
+    /// # Errors
+    /// - [`CarbonError::UnauthorizedVerifier`] if caller is not the admin.
+    pub fn rotate_oracle(
+        env: Env,
+        admin: Address,
+        new_oracle: Address,
+    ) -> Result<(), CarbonError> {
+        admin.require_auth();
+        Self::require_admin(&env, &admin)?;
+
+        env.storage().persistent().set(&DataKey::OracleAddress, &new_oracle);
+
+        env.events().publish(
+            (symbol_short!("c_ledger"), symbol_short!("ora_rot")),
+            (admin, new_oracle),
+        );
+        Ok(())
+    }
+
     /// Authorised oracle submits satellite-verified monitoring data for a project period.
-    /// Methodology score below 70 triggers an on-chain warning event.
     ///
     /// # Errors
     /// - [`CarbonError::UnauthorizedOracle`] if caller is not the registered oracle.
@@ -120,7 +141,6 @@ impl CarbonOracleContract {
             &DataKey::MonitoringData(project_id.clone(), period.clone()),
             &data,
         );
-        // Track latest submission timestamp for freshness checks
         env.storage().persistent().set(&DataKey::LatestMonitoring(project_id.clone()), &now);
 
         if methodology_score < 70 {
@@ -170,9 +190,6 @@ impl CarbonOracleContract {
     }
 
     /// Returns monitoring data for a specific project and period.
-    ///
-    /// # Errors
-    /// - [`CarbonError::ProjectNotFound`] if no data exists for the given period.
     pub fn get_monitoring_data(
         env: Env,
         project_id: String,
@@ -185,9 +202,6 @@ impl CarbonOracleContract {
     }
 
     /// Returns the current benchmark price (in USDC stroops) for a methodology and vintage.
-    ///
-    /// # Errors
-    /// - [`CarbonError::PriceNotSet`] if no price is cached or cache has expired.
     pub fn get_benchmark_price(
         env: Env,
         methodology: String,
@@ -199,8 +213,7 @@ impl CarbonOracleContract {
             .ok_or(CarbonError::PriceNotSet)
     }
 
-    /// Flag a project for investigation. Emits an on-chain event that halts
-    /// new credit issuance until the flag is resolved.
+    /// Flag a project for investigation.
     ///
     /// # Errors
     /// - [`CarbonError::UnauthorizedOracle`] if caller is not the registered oracle.
@@ -210,11 +223,9 @@ impl CarbonOracleContract {
         project_id: String,
         reason: String,
     ) -> Result<(), CarbonError> {
-        // ── checks ────────────────────────────────────────────────────────────
         oracle_signer.require_auth();
         Self::require_oracle(&env, &oracle_signer)?;
 
-        // ── effects ───────────────────────────────────────────────────────────
         env.storage().persistent().set(&DataKey::FlaggedProject(project_id.clone()), &reason);
 
         env.events().publish(
@@ -225,7 +236,6 @@ impl CarbonOracleContract {
     }
 
     /// Returns `true` if monitoring data was submitted within the last 365 days.
-    /// Returns `false` (stale) if no data exists or data is older than 365 days.
     pub fn is_monitoring_current(env: Env, project_id: String) -> bool {
         let latest: Option<u64> = env
             .storage()
@@ -251,6 +261,18 @@ impl CarbonOracleContract {
             .ok_or(CarbonError::UnauthorizedOracle)?;
         if &oracle != caller {
             return Err(CarbonError::UnauthorizedOracle);
+        }
+        Ok(())
+    }
+
+    fn require_admin(env: &Env, caller: &Address) -> Result<(), CarbonError> {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .ok_or(CarbonError::UnauthorizedVerifier)?;
+        if &admin != caller {
+            return Err(CarbonError::UnauthorizedVerifier);
         }
         Ok(())
     }
@@ -312,6 +334,58 @@ mod tests {
     }
 
     #[test]
+    fn test_unauthorized_price_update_rejected() {
+        let env = Env::default();
+        let (client, _, _) = setup(&env);
+        let rogue = Address::generate(&env);
+
+        let result = client.try_update_credit_price(&rogue, &s(&env, "VCS"), &2023_u32, &15_0000000_i128);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rotate_oracle_admin_only() {
+        let env = Env::default();
+        let (client, admin, old_oracle) = setup(&env);
+        let new_oracle = Address::generate(&env);
+
+        // Admin can rotate
+        client.rotate_oracle(&admin, &new_oracle).unwrap();
+
+        // Old oracle is now rejected
+        let result = client.try_submit_monitoring_data(
+            &old_oracle,
+            &s(&env, "proj-001"),
+            &s(&env, "2023-Q1"),
+            &1000_i128,
+            &80_u32,
+            &s(&env, "QmCID"),
+        );
+        assert!(result.is_err());
+
+        // New oracle is accepted
+        client.submit_monitoring_data(
+            &new_oracle,
+            &s(&env, "proj-001"),
+            &s(&env, "2023-Q1"),
+            &1000_i128,
+            &80_u32,
+            &s(&env, "QmCID"),
+        ).unwrap();
+    }
+
+    #[test]
+    fn test_rotate_oracle_non_admin_rejected() {
+        let env = Env::default();
+        let (client, _, _) = setup(&env);
+        let attacker   = Address::generate(&env);
+        let new_oracle = Address::generate(&env);
+
+        let result = client.try_rotate_oracle(&attacker, &new_oracle);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_benchmark_price_update() {
         let env = Env::default();
         let (client, _, oracle) = setup(&env);
@@ -335,7 +409,6 @@ mod tests {
         let (client, _, oracle) = setup(&env);
 
         client.flag_project(&oracle, &s(&env, "proj-001"), &s(&env, "satellite contradiction")).unwrap();
-        // Verify event was emitted (no error = success)
     }
 
     #[test]
@@ -343,7 +416,6 @@ mod tests {
         let env = Env::default();
         let (client, _, oracle) = setup(&env);
 
-        // Submit monitoring data at timestamp 0
         env.ledger().set(LedgerInfo {
             timestamp: 1_000_000,
             protocol_version: 20,
@@ -364,7 +436,6 @@ mod tests {
             &s(&env, "QmCID"),
         ).unwrap();
 
-        // Advance time by 366 days
         env.ledger().set(LedgerInfo {
             timestamp: 1_000_000 + (366 * 24 * 60 * 60),
             protocol_version: 20,
