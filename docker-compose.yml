@@ -47,6 +47,7 @@ services:
       STELLAR_NETWORK:   ${STELLAR_NETWORK:-testnet}
       STELLAR_RPC_URL:   ${STELLAR_RPC_URL:-https://soroban-testnet.stellar.org}
       FRONTEND_URL:      http://localhost:3000
+      ALLOWED_ORIGINS:   ${ALLOWED_ORIGINS:-http://localhost:3000}
       PORT:              3001
       REDIS_HOST:        redis
       REDIS_PORT:        6379
