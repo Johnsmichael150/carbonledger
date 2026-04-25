@@ -752,3 +752,189 @@ mod tests {
         assert!(result.is_err());
     }
 }
+
+// ── Double-Counting Prevention Tests (#47) ────────────────────────────────────
+
+#[cfg(test)]
+mod double_counting_tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Env, String};
+
+    fn s(env: &Env, v: &str) -> String { String::from_str(env, v) }
+
+    fn fresh_contract(env: &Env) -> (CarbonCreditContractClient, Address) {
+        env.mock_all_auths();
+        let admin    = Address::generate(env);
+        let registry = Address::generate(env);
+        let id       = env.register_contract(None, CarbonCreditContract);
+        let client   = CarbonCreditContractClient::new(env, &id);
+        client.initialize(&admin, &registry).unwrap();
+        (client, admin)
+    }
+
+    fn mint(client: &CarbonCreditContractClient, env: &Env, admin: &Address,
+            batch: &str, start: u64, end: u64) -> Result<(), soroban_sdk::Error> {
+        let owner = Address::generate(env);
+        client.try_mint_credits(
+            admin,
+            &s(env, "proj-001"),
+            &((end - start + 1) as i128),
+            &2023_u32,
+            &s(env, batch),
+            &start,
+            &end,
+            &s(env, "QmCID"),
+            &owner,
+        ).map(|_| ())
+    }
+
+    // ── verify_serial_range public API ────────────────────────────────────────
+
+    /// Non-overlapping range must return true (safe to mint).
+    #[test]
+    fn test_verify_serial_range_non_overlapping_returns_true() {
+        let env = Env::default();
+        let (client, admin) = fresh_contract(&env);
+        mint(&client, &env, &admin, "b1", 1, 100).unwrap();
+
+        assert!(client.verify_serial_range(&101_u64, &200_u64));
+    }
+
+    /// Overlapping range must return false (would cause double-counting).
+    #[test]
+    fn test_verify_serial_range_overlapping_returns_false() {
+        let env = Env::default();
+        let (client, admin) = fresh_contract(&env);
+        mint(&client, &env, &admin, "b1", 1, 100).unwrap();
+
+        assert!(!client.verify_serial_range(&50_u64, &150_u64));
+    }
+
+    /// Exact boundary: range [1,100] then [100,200] — shares serial 100, must conflict.
+    #[test]
+    fn test_verify_serial_range_exact_upper_boundary_conflict() {
+        let env = Env::default();
+        let (client, admin) = fresh_contract(&env);
+        mint(&client, &env, &admin, "b1", 1, 100).unwrap();
+
+        assert!(!client.verify_serial_range(&100_u64, &200_u64));
+    }
+
+    /// Exact boundary: range [1,100] then [101,200] — adjacent, no overlap, must pass.
+    #[test]
+    fn test_verify_serial_range_adjacent_boundary_no_conflict() {
+        let env = Env::default();
+        let (client, admin) = fresh_contract(&env);
+        mint(&client, &env, &admin, "b1", 1, 100).unwrap();
+
+        assert!(client.verify_serial_range(&101_u64, &200_u64));
+    }
+
+    // ── mint_credits overlap detection ────────────────────────────────────────
+
+    /// Overlapping range on mint must return DoubleCountingDetected.
+    #[test]
+    fn test_mint_overlapping_range_returns_double_counting_error() {
+        let env = Env::default();
+        let (client, admin) = fresh_contract(&env);
+        mint(&client, &env, &admin, "b1", 1, 100).unwrap();
+
+        let result = mint(&client, &env, &admin, "b2", 50, 150);
+        assert!(result.is_err());
+    }
+
+    /// Exact boundary collision: new range starts exactly where existing ends.
+    #[test]
+    fn test_mint_exact_boundary_collision_fails() {
+        let env = Env::default();
+        let (client, admin) = fresh_contract(&env);
+        mint(&client, &env, &admin, "b1", 1, 100).unwrap();
+
+        // serial 100 is already taken — must fail
+        let result = mint(&client, &env, &admin, "b2", 100, 200);
+        assert!(result.is_err());
+    }
+
+    /// Exact boundary collision: new range ends exactly where existing starts.
+    #[test]
+    fn test_mint_exact_lower_boundary_collision_fails() {
+        let env = Env::default();
+        let (client, admin) = fresh_contract(&env);
+        mint(&client, &env, &admin, "b1", 100, 200).unwrap();
+
+        // serial 100 is already taken — must fail
+        let result = mint(&client, &env, &admin, "b2", 50, 100);
+        assert!(result.is_err());
+    }
+
+    /// Fully contained range must fail.
+    #[test]
+    fn test_mint_fully_contained_range_fails() {
+        let env = Env::default();
+        let (client, admin) = fresh_contract(&env);
+        mint(&client, &env, &admin, "b1", 1, 1000).unwrap();
+
+        let result = mint(&client, &env, &admin, "b2", 100, 200);
+        assert!(result.is_err());
+    }
+
+    /// Surrounding range (new range wraps existing) must fail.
+    #[test]
+    fn test_mint_surrounding_range_fails() {
+        let env = Env::default();
+        let (client, admin) = fresh_contract(&env);
+        mint(&client, &env, &admin, "b1", 100, 200).unwrap();
+
+        let result = mint(&client, &env, &admin, "b2", 1, 1000);
+        assert!(result.is_err());
+    }
+
+    /// Non-overlapping range after existing batch must succeed.
+    #[test]
+    fn test_mint_non_overlapping_range_succeeds() {
+        let env = Env::default();
+        let (client, admin) = fresh_contract(&env);
+        mint(&client, &env, &admin, "b1", 1, 100).unwrap();
+
+        // Adjacent — no overlap
+        let result = mint(&client, &env, &admin, "b2", 101, 200);
+        assert!(result.is_ok());
+    }
+
+    /// Multiple non-overlapping batches must all succeed.
+    #[test]
+    fn test_mint_multiple_non_overlapping_batches_succeed() {
+        let env = Env::default();
+        let (client, admin) = fresh_contract(&env);
+        mint(&client, &env, &admin, "b1", 1,   100).unwrap();
+        mint(&client, &env, &admin, "b2", 101, 200).unwrap();
+        mint(&client, &env, &admin, "b3", 201, 300).unwrap();
+
+        // All three registered — a new overlap must still be caught
+        let result = mint(&client, &env, &admin, "b4", 150, 250);
+        assert!(result.is_err());
+    }
+
+    /// Single-serial range collision: range [50,50] overlaps [1,100].
+    #[test]
+    fn test_mint_single_serial_overlap_fails() {
+        let env = Env::default();
+        let (client, admin) = fresh_contract(&env);
+        mint(&client, &env, &admin, "b1", 1, 100).unwrap();
+
+        let result = mint(&client, &env, &admin, "b2", 50, 50);
+        assert!(result.is_err());
+    }
+
+    /// Duplicate batch_id must be rejected (SerialNumberConflict), not silently overwrite.
+    #[test]
+    fn test_mint_duplicate_batch_id_fails() {
+        let env = Env::default();
+        let (client, admin) = fresh_contract(&env);
+        mint(&client, &env, &admin, "b1", 1, 100).unwrap();
+
+        // Same batch_id, different range — must fail
+        let result = mint(&client, &env, &admin, "b1", 200, 300);
+        assert!(result.is_err());
+    }
+}
