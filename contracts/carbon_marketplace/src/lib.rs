@@ -407,7 +407,17 @@ impl CarbonMarketplaceContract {
         Ok(())
     }
 
-    /// Bulk purchase from multiple listings in a single transaction.
+    /// Bulk purchase from multiple listings in a single atomic transaction.
+    ///
+    /// Atomicity guarantee: all listings are validated before any state is mutated
+    /// and before any USDC is transferred. If any listing fails (insufficient
+    /// credits, delisted, suspended, zero amount, or arithmetic overflow) the
+    /// entire call reverts with no partial fills and no USDC transferred.
+    ///
+    /// Execution order:
+    ///   1. VALIDATE  — check every listing; no storage writes.
+    ///   2. MUTATE    — write updated listing state for every entry.
+    ///   3. TRANSFER  — execute USDC and credit transfers for every entry.
     ///
     /// # Resource optimizations (issue #52)
     /// - `UsdcToken`, `Admin`, and `CreditContract` are read from storage once before
@@ -444,17 +454,20 @@ impl CarbonMarketplaceContract {
 
         for i in 0..len {
             let listing_id = listing_ids.get(i).unwrap();
-            let amount = amounts.get(i).unwrap();
+            let amount     = amounts.get(i).unwrap();
 
             if amount <= 0 {
                 return Err(CarbonError::ZeroAmountNotAllowed);
             }
 
-            let mut listing = Self::load_listing(&env, &listing_id)?;
+            let listing = Self::load_listing(&env, &listing_id)?;
             if listing.status == ListingStatus::Delisted || listing.status == ListingStatus::Sold {
                 return Err(CarbonError::ListingNotFound);
             }
-            if env.storage().persistent().get::<DataKey, bool>(&DataKey::SuspendedProject(listing.project_id.clone())).unwrap_or(false) {
+            if env.storage().persistent()
+                .get::<DataKey, bool>(&DataKey::SuspendedProject(listing.project_id.clone()))
+                .unwrap_or(false)
+            {
                 return Err(CarbonError::ProjectSuspended);
             }
             if amount > listing.amount_available {
@@ -473,8 +486,16 @@ impl CarbonMarketplaceContract {
             } else {
                 ListingStatus::PartiallyFilled
             };
-            env.storage().persistent().set(&DataKey::Listing(listing_id.clone()), &listing);
-            Self::extend_listing_ttl(&env, &listing_id);
+            env.storage().persistent().set(&DataKey::Listing(listing.listing_id.clone()), &listing);
+            Self::extend_listing_ttl(&env, &listing.listing_id);
+            validated_listings.set(i, listing);
+        }
+
+        // ── Phase 3: TRANSFER — USDC and credits ─────────────────────────────
+        let usdc: Address           = env.storage().persistent().get(&DataKey::UsdcToken).unwrap();
+        let admin: Address          = env.storage().persistent().get(&DataKey::Admin).unwrap();
+        let credit_contract: Address = env.storage().persistent().get(&DataKey::CreditContract).unwrap();
+        let usdc_client = token::Client::new(&env, &usdc);
 
             usdc_client.transfer(&buyer, &listing.seller, &seller_proceeds);
 
@@ -486,9 +507,9 @@ impl CarbonMarketplaceContract {
                 &soroban_sdk::Symbol::new(&env, "transfer_credits"),
                 soroban_sdk::vec![
                     &env,
-                    listing.seller.into_val(&env),
+                    listing.seller.clone().into_val(&env),
                     buyer.clone().into_val(&env),
-                    listing.batch_id.into_val(&env),
+                    listing.batch_id.clone().into_val(&env),
                     amount.into_val(&env),
                 ],
             );
@@ -496,15 +517,16 @@ impl CarbonMarketplaceContract {
             env.events().publish(
                 (symbol_short!("c_ledger"), symbol_short!("bulk_buy")),
                 PurchaseCompletedEvent {
-                    listing_id: listing_id.clone(),
-                    buyer: buyer.clone(),
-                    seller: listing.seller.clone(),
+                    listing_id: listing.listing_id.clone(),
+                    buyer:      buyer.clone(),
+                    seller:     listing.seller.clone(),
                     amount,
-                    total_cost,
-                    timestamp: env.ledger().timestamp(),
+                    total_cost: proceeds.checked_add(fee).ok_or(CarbonError::Arithmetic)?,
+                    timestamp:  env.ledger().timestamp(),
                 },
             );
         }
+
         Ok(())
     }
 
