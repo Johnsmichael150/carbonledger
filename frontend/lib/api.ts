@@ -26,6 +26,7 @@ export interface CreditBatch {
   batchId: string;
   projectId: string;
   vintageYear: number;
+  /** Fractional tonnes supported, e.g. 0.5 tCO₂e. Minimum 0.01. */
   amount: number;
   serialStart: string;
   serialEnd: string;
@@ -41,6 +42,7 @@ export interface MarketListing {
   projectName: string;
   batchId: string;
   seller: string;
+  /** Fractional tonnes supported, e.g. 0.5 tCO₂e. Minimum 0.01. */
   amountAvailable: number;
   pricePerCredit: string;
   vintageYear: number;
@@ -56,6 +58,7 @@ export interface RetirementRecord {
   batchId: string;
   projectId: string;
   projectName?: string;
+  /** Fractional tonnes supported, e.g. 0.5 tCO₂e. */
   amount: number;
   retiredBy: string;
   beneficiary: string;
@@ -149,6 +152,35 @@ export function usePlatformStats() {
   });
 }
 
+export interface ProvenanceEvent {
+  type: "registered" | "verified" | "minted" | "listed" | "purchased" | "transferred" | "retired";
+  label: string;
+  timestamp: string;
+  actor?: string;
+  txHash?: string;
+  detail?: string;
+}
+
+export interface SerialLookupResult {
+  serialNumber: string;
+  batchId: string;
+  projectId: string;
+  projectName?: string;
+  vintageYear: number;
+  methodology?: string;
+  country?: string;
+  currentOwner?: string;
+  status: "active" | "retired";
+  // Retirement fields (present when status === "retired")
+  retirementId?: string;
+  beneficiary?: string;
+  retirementReason?: string;
+  retiredAt?: string;
+  txHash?: string;
+  // Chain of custody
+  provenance: ProvenanceEvent[];
+}
+
 export function useSerialLookup(serial: string) {
   return useSWR<RetirementRecord | CreditBatch>(
     serial ? `${API_URL}/credits/lookup/${serial}` : null,
@@ -157,37 +189,23 @@ export function useSerialLookup(serial: string) {
   );
 }
 
-export interface NotificationPreferences {
-  projectApproved: boolean;
-  creditsMinted: boolean;
-  purchaseConfirmed: boolean;
-  retirementConfirmed: boolean;
+export function useSerialRangeLookup(start: string, end: string) {
+  const key = start && end ? `${API_URL}/credits/lookup?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}` : null;
+  return useSWR<SerialLookupResult[]>(key, fetcher, swrConfig);
 }
 
-export function useNotificationPreferences(publicKey: string) {
-  return useSWR<NotificationPreferences>(
-    publicKey ? `${API_URL}/notifications/preferences/${publicKey}` : null,
+export function useSerialSingleLookup(serial: string) {
+  return useSWR<SerialLookupResult>(
+    serial ? `${API_URL}/credits/lookup/${encodeURIComponent(serial)}` : null,
     fetcher,
     swrConfig,
   );
 }
 
-export async function updateNotificationPreferences(
-  publicKey: string,
-  prefs: Partial<NotificationPreferences>,
-): Promise<NotificationPreferences> {
-  const res = await fetch(`${API_URL}/notifications/preferences/${publicKey}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(prefs),
-  });
-  if (!res.ok) throw new Error((await res.json()).message);
-  return res.json();
-}
-
 // ── Mutations ─────────────────────────────────────────────────────────────────
 
 export async function purchaseCredits(listingId: string, amount: number, buyerPublicKey: string) {
+  if (amount < 0.01) throw new Error("Minimum purchase is 0.01 tCO₂e");
   const res = await fetch(`${API_URL}/marketplace/purchase`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -204,6 +222,7 @@ export async function retireCredits(payload: {
   retirementReason: string;
   holderPublicKey: string;
 }) {
+  if (payload.amount < 0.01) throw new Error("Minimum retirement is 0.01 tCO₂e");
   const res = await fetch(`${API_URL}/credits/retire`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
