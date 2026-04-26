@@ -1,25 +1,34 @@
 'use client';
 
-import { useState } from 'react';
-import { ResponsiveTable } from '@/components/ui/ResponsiveTable';
-import { useIsMobile } from '@/hooks/useMediaQuery';
-
-// Mock data - replace with your actual data
-const listings = [
-  { id: 1, project: 'Solar Farm', amount: '100', price: '$25', location: 'California' },
-  { id: 2, project: 'Wind Energy', amount: '250', price: '$22', location: 'Texas' },
-  { id: 3, project: 'Forest Conservation', amount: '500', price: '$30', location: 'Brazil' },
-];
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import { useListings } from "../../lib/api";
+import { formatStroops, formatTonnes } from "../../lib/carbon-utils";
+import { colors } from "../../styles/design-system";
+import CreditCard from "../../components/CreditCard";
+import MarketplaceFilter, { FilterState } from "../../components/MarketplaceFilter";
+import LoadingSkeleton from "../../components/LoadingSkeleton";
 
 export default function MarketplacePage() {
-  const isMobile = useIsMobile();
+  const searchParams = useSearchParams();
+  const [filters, setFilters] = useState<FilterState>({
+    methodology: "", vintageYear: "", country: "", minPrice: "", maxPrice: "",
+  });
 
-  const columns = [
-    { key: 'project', header: 'Project' },
-    { key: 'amount', header: 'Amount (tons)' },
-    { key: 'price', header: 'Price' },
-    { key: 'location', header: 'Location' },
-  ];
+  useEffect(() => {
+    const vintage = searchParams.get("vintage");
+    if (vintage) {
+      setFilters((prev) => ({ ...prev, vintageYear: vintage }));
+    }
+  }, [searchParams]);
+
+  const { data: listings, isLoading } = useListings({
+    methodology: filters.methodology || undefined,
+    vintage:     filters.vintageYear ? Number(filters.vintageYear) : undefined,
+    country:     filters.country     || undefined,
+    minPrice:    filters.minPrice    || undefined,
+    maxPrice:    filters.maxPrice    || undefined,
+  });
 
   if (isMobile) {
     return (
