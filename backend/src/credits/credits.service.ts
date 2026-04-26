@@ -29,15 +29,13 @@ export class CreditsService {
 
     const batch = await this.prisma.creditBatch.create({ data: dto });
 
-    // Notify project owner
+    // Notify project owner (respects per-event preferences)
     const project = await this.prisma.carbonProject.findUnique({ where: { projectId: dto.projectId } });
-    const owner = await this.prisma.user.findUnique({ where: { publicKey: project?.ownerAddress || '' } });
-    if (owner && owner.email && owner.isSubscribed) {
-      await this.mailService.sendEmail(owner.email, MailEvent.CREDITS_MINTED, {
+    if (project?.ownerAddress) {
+      await this.mailService.sendIfEnabled(project.ownerAddress, MailEvent.CREDITS_MINTED, {
         batchId: batch.batchId,
         amount: batch.amount,
         vintageYear: batch.vintageYear,
-        to: owner.email,
       });
     }
 
@@ -108,16 +106,12 @@ export class CreditsService {
       data:  { totalCreditsRetired: { increment: dto.amount } },
     });
 
-    // Notify beneficiary/holder
-    const holder = await this.prisma.user.findUnique({ where: { publicKey: dto.holderPublicKey } });
-    if (holder && holder.email && holder.isSubscribed) {
-      await this.mailService.sendEmail(holder.email, MailEvent.RETIREMENT_CONFIRMED, {
-        retirementId: retirement.retirementId,
-        beneficiary: retirement.beneficiary,
-        amount: retirement.amount,
-        to: holder.email,
-      });
-    }
+    // Notify beneficiary/holder (respects per-event preferences)
+    await this.mailService.sendIfEnabled(dto.holderPublicKey, MailEvent.RETIREMENT_CONFIRMED, {
+      retirementId: retirement.retirementId,
+      beneficiary: retirement.beneficiary,
+      amount: retirement.amount,
+    });
 
     return retirement;
   }

@@ -157,6 +157,34 @@ export function useSerialLookup(serial: string) {
   );
 }
 
+export interface NotificationPreferences {
+  projectApproved: boolean;
+  creditsMinted: boolean;
+  purchaseConfirmed: boolean;
+  retirementConfirmed: boolean;
+}
+
+export function useNotificationPreferences(publicKey: string) {
+  return useSWR<NotificationPreferences>(
+    publicKey ? `${API_URL}/notifications/preferences/${publicKey}` : null,
+    fetcher,
+    swrConfig,
+  );
+}
+
+export async function updateNotificationPreferences(
+  publicKey: string,
+  prefs: Partial<NotificationPreferences>,
+): Promise<NotificationPreferences> {
+  const res = await fetch(`${API_URL}/notifications/preferences/${publicKey}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(prefs),
+  });
+  if (!res.ok) throw new Error((await res.json()).message);
+  return res.json();
+}
+
 // ── Mutations ─────────────────────────────────────────────────────────────────
 
 export async function purchaseCredits(listingId: string, amount: number, buyerPublicKey: string) {
