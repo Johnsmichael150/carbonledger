@@ -111,6 +111,13 @@ pub struct CarbonMarketplaceContract;
 #[contractimpl]
 impl CarbonMarketplaceContract {
 
+    /// Returns the current year based on the ledger timestamp.
+    fn current_year(env: &Env) -> u32 {
+        let seconds_per_year: u64 = 31557600; // Approximate seconds in a year
+        let timestamp = env.ledger().timestamp();
+        1970 + (timestamp / seconds_per_year) as u32
+    }
+
     /// Initialise marketplace with admin and USDC token contract address.
     ///
     /// # Parameters

@@ -191,6 +191,10 @@ impl CarbonRegistryContract {
             return Err(CarbonError::ProjectAlreadyExists);
         }
 
+        if env.storage().persistent().has(&DataKey::Project(project_id.clone())) {
+            return Err(CarbonError::ProjectAlreadyExists);
+        }
+
         // ── effects ───────────────────────────────────────────────────────────
         let project = CarbonProject {
             project_id:            project_id.clone(),
