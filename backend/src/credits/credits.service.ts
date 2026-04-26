@@ -11,6 +11,7 @@ export class CreditsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
+    private readonly ipfsService: IpfsService,
   ) {}
 
   async mintCredits(dto: MintCreditsDto) {
