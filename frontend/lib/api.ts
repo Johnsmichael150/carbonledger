@@ -49,6 +49,7 @@ export interface MarketListing {
   methodology: string;
   country: string;
   status: string;
+  oracleDaysSinceUpdate?: number;
   createdAt: string;
 }
 
@@ -90,6 +91,12 @@ export interface PlatformStats {
   totalCreditsRetired: number;
   activeProjects: number;
   marketplaceVolume: string;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  beneficiary: string;
+  totalTonnes: number;
 }
 
 // ── Fetcher ───────────────────────────────────────────────────────────────────
