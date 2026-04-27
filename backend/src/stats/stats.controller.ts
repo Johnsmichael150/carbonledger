@@ -11,4 +11,9 @@ export class StatsController {
   getStats() {
     return this.statsService.getPlatformStats();
   }
+
+  @Get("cache")
+  getCacheStats() {
+    return { listings: getCacheMetrics() };
+  }
 }

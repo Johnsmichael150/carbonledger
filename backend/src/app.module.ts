@@ -1,3 +1,4 @@
+import { AdminModule } from "./admin/admin.module";
 import { Module, Controller, Get } from "@nestjs/common";
 import { APP_INTERCEPTOR, APP_GUARD, APP_FILTER } from "@nestjs/core";
 import { BullModule } from "@nestjs/bullmq";
@@ -73,6 +74,7 @@ class HealthController {
     UploadsModule,
     AuditModule,
     VerifiersModule,
+    AdminModule,
   ],
   controllers: [HealthController],
   providers: [
