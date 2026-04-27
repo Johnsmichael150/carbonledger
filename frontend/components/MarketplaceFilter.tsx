@@ -1,23 +1,44 @@
 "use client";
 
+import { useCallback, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { colors } from "../styles/design-system";
 
 export interface FilterState {
-  methodology: string;
-  vintageYear: string;
-  country: string;
-  minPrice: string;
-  maxPrice: string;
+  methodology:  string;
+  vintageYear:  string;
+  country:      string;
+  minPrice:     string;
+  maxPrice:     string;
+  projectType:  string;
+}
+
+export const EMPTY_FILTERS: FilterState = {
+  methodology: "", vintageYear: "", country: "",
+  minPrice: "", maxPrice: "", projectType: "",
+};
+
+/** Build a FilterState from URLSearchParams. */
+export function filtersFromParams(params: URLSearchParams): FilterState {
+  return {
+    methodology: params.get("methodology") ?? "",
+    vintageYear: params.get("vintageYear")  ?? "",
+    country:     params.get("country")      ?? "",
+    minPrice:    params.get("minPrice")     ?? "",
+    maxPrice:    params.get("maxPrice")     ?? "",
+    projectType: params.get("projectType")  ?? "",
+  };
 }
 
 interface Props {
-  filters: FilterState;
+  filters:  FilterState;
   onChange: (filters: FilterState) => void;
 }
 
-const METHODOLOGIES = ["", "VCS", "Gold Standard", "ACR", "CAR", "Plan Vivo"];
-const COUNTRIES     = ["", "Brazil", "Indonesia", "Kenya", "India", "Colombia", "Peru", "USA"];
-const VINTAGES      = ["", "2019", "2020", "2021", "2022", "2023", "2024"];
+const METHODOLOGIES  = ["", "VCS", "Gold Standard", "ACR", "CAR", "Plan Vivo"];
+const COUNTRIES      = ["", "Brazil", "Indonesia", "Kenya", "India", "Colombia", "Peru", "USA"];
+const VINTAGES       = ["", "2019", "2020", "2021", "2022", "2023", "2024"];
+const PROJECT_TYPES  = ["", "REDD+", "Afforestation", "Soil Carbon", "Renewable Energy", "Methane Capture", "Blue Carbon"];
 
 const controlStyle: React.CSSProperties = {
   border: `1px solid ${colors.neutral[300]}`,
@@ -27,6 +48,7 @@ const controlStyle: React.CSSProperties = {
   color: colors.neutral[700],
   background: colors.surface,
   width: "100%",
+  boxSizing: "border-box",
 };
 
 export default function MarketplaceFilter({ filters, onChange }: Props) {
