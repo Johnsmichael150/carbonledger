@@ -61,6 +61,7 @@ class HealthController {
             password: process.env.REDIS_PASSWORD || undefined,
           },
     }),
+    LoggerModule,
     AuthModule,
     ProjectsModule,
     CreditsModule,

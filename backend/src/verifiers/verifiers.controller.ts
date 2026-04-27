@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Patch, Param, Body, Query } from '@nestjs/common';
 import { VerifiersService } from './verifiers.service';
 import { ApplyVerifierDto, ReviewVerifierDto } from './verifiers.dto';
-import { Public, Roles } from '../auth/decorators';
+import { RolesGuard, Roles } from '../auth/roles.guard';
 
 @Controller('verifiers')
 export class VerifiersController {
@@ -14,13 +14,15 @@ export class VerifiersController {
   }
 
   @Get()
-  @Roles('admin')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('admin', 'verifier')
   findAll(@Query('status') status?: string) {
     return this.verifiersService.findAll(status);
   }
 
   @Get(':id')
-  @Roles('admin')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles('admin', 'verifier')
   findOne(@Param('id') id: string) {
     return this.verifiersService.findOne(id);
   }
@@ -32,6 +34,7 @@ export class VerifiersController {
   }
 
   @Get(':publicKey/pending-projects')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles('verifier', 'admin')
   pendingProjects(@Param('publicKey') publicKey: string) {
     return this.verifiersService.pendingProjects(publicKey);
