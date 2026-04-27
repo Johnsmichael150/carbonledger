@@ -93,6 +93,12 @@ export interface PlatformStats {
   marketplaceVolume: string;
 }
 
+export interface LeaderboardEntry {
+  rank: number;
+  beneficiary: string;
+  totalTonnes: number;
+}
+
 // ── Fetcher ───────────────────────────────────────────────────────────────────
 
 async function fetcher<T>(url: string): Promise<T> {
