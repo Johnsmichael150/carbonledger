@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ConsoleLogger, LogLevel } from '@nestjs/common';
+import { ConsoleLogger, ForbiddenException, LogLevel } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 /**
