@@ -18,6 +18,8 @@ export interface CarbonProject {
   totalCreditsRetired: number;
   metadataCid: string;
   methodologyScore: number;
+  latitude?: number;
+  longitude?: number;
   createdAt: string;
 }
 
@@ -86,6 +88,11 @@ export interface OracleStatus {
   latestScore: number | null;
 }
 
+export interface OracleHistoryEntry {
+  submittedAt: string;
+  score: number;
+}
+
 export interface PlatformStats {
   totalCreditsIssued: number;
   totalCreditsRetired: number;
@@ -149,6 +156,14 @@ export function useOracleStatus(projectId: string) {
     projectId ? `${API_URL}/oracle/status/${projectId}` : null,
     fetcher,
     { ...swrConfig, refreshInterval: 60_000 },
+  );
+}
+
+export function useOracleHistory(projectId: string) {
+  return useSWR<OracleHistoryEntry[]>(
+    projectId ? `${API_URL}/oracle/history/${projectId}` : null,
+    fetcher,
+    swrConfig,
   );
 }
 
