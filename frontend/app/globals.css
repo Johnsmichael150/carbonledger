@@ -1,5 +1,7 @@
 /* Mobile-first responsive styles */
 
+@import 'leaflet/dist/leaflet.css';
+
 /* Base mobile styles */
 * {
   box-sizing: border-box;
